@@ -12,7 +12,7 @@ const SLEEP_AFTER = 120_000
 const BLIP_MS = { typing: 1200, happy: 1600, oops: 1000 }
 const BOUNCE_FOR = 3000 // then it stands and watches the prompt until the draft is sent
 
-type Eyes = 'front' | 'left' | 'down' | 'shut'
+type Eyes = 'front' | 'left' | 'right' | 'down' | 'shut'
 export type Mode = 'idle' | 'sleep' | 'typing' | 'watching' | 'happy' | 'oops' | 'thinking' | 'tool' | 'waiting'
 
 export type Sim = {
@@ -85,10 +85,17 @@ export const step = (s: Sim, columns: number): Sim => {
 
 // The welcome logo's pixels, one cell narrower: ' ▐▛██▜▌ ' / '▝▜████▛▘' / '  ▘▘▝▝  '.
 const BODY = '...##########...'
-const EYES = { front: '...##.####.##...', left: '...#.####.###...', down: BODY, shut: BODY }
+const EYES = { front: '...##.####.##...', left: '...#.####.###...', right: '...###.####.#...', down: BODY, shut: BODY }
 const ARMS = '.##############.'
 const ARMS_EYES_DOWN = '.####.####.####.' // the eyes drop into the arm row: looking down at the prompt
 const LEGS = ['....#.#..#.#....', '...#.#....#.#...']
+
+// The thought bubble left of the head, in the order its parts appear: a dot, a bigger dot, a cloud.
+const BUBBLE: [number, number][][] = [
+  [[-1, 1]],
+  [[-4, 0], [-3, 0]],
+  [[-9, 0], [-8, 0], [-7, 0], [-10, 1], [-9, 1], [-8, 1], [-7, 1], [-6, 1]],
+]
 
 const sprite = (eyes: Eyes, stride: number, lying: boolean) => [
   BODY,
@@ -142,10 +149,14 @@ export const draw = (s: Sim, columns: number): string[] => {
       x += beat % 2 ? 1 : -1
       eyes = 'shut'
       break
-    case 'thinking':
-      eyes = 'left'
-      for (let i = 0; i < Math.floor(beat / 4) % 4; i++) plot(x - 1 - 2 * i, 2 - i)
+    case 'thinking': {
+      // Stays put, eyes darting side to side, while a thought bubble grows beside it and pops.
+      eyes = Math.floor(beat / 7) % 2 ? 'right' : 'left'
+      const phase = beat % 20
+      const stages = phase < 3 || phase >= 17 ? 0 : Math.min(3, Math.floor((phase + 1) / 4))
+      BUBBLE.slice(0, stages).flat().forEach(([dx, dy]) => plot(x + dx, dy))
       break
+    }
     case 'tool':
       stride = Math.floor(beat / 2)
       break

@@ -73,3 +73,12 @@ test('the band draws the critter and no letters', async $ => {
     await ui.unmount()
   }
 })
+
+test('thinks in place, eyes darting, while a thought bubble grows and pops', () => {
+  const thinking = run(initial({ ...IDLE, isWorking: true, activity: 'thinking' }), 100)
+  const later = run(thinking, 3000)
+  expect(modeOf(later)).toBe('thinking')
+  expect(later.x).toBe(thinking.x)
+  const frames = new Set(Array.from({ length: 20 }, (_, i) => draw(run(thinking, i * 100), 40).join('\n')))
+  expect(frames.size).toBeGreaterThan(3)
+})
