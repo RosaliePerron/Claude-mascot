@@ -1,0 +1,6 @@
+{
+  "name": "mascot",
+  "description": "An animated Claude mascot for Claude Code",
+  "owner": { "name": "Rosalie Perron" },
+  "plugins": [{ "name": "mascot", "source": "./" }]
+}
