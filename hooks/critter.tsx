@@ -4,7 +4,8 @@ import type { CritterProps } from '../types'
 
 // Each cell is 2x2 pixels; index = topLeft*8 + topRight*4 + bottomLeft*2 + bottomRight.
 const QUADS = ' ▗▖▄▝▐▞▟▘▚▌▙▀▜▛█'
-const ROWS = 3
+const ROWS = 4
+const REST = 2 // the pixel row it stands on; the row of cells above is headroom for hops and its thought bubble
 const TICK = 100
 const ROAM = 40 // pixels the critter wanders left of its home at the right edge
 const SPRITE_WIDTH = 16
@@ -13,7 +14,7 @@ const BLIP_MS = { typing: 1200, happy: 1600, oops: 1000 }
 const BOUNCE_FOR = 3000 // then it stands and watches the prompt until the draft is sent
 
 type Eyes = 'front' | 'left' | 'right' | 'down' | 'shut'
-export type Mode = 'idle' | 'sleep' | 'typing' | 'watching' | 'happy' | 'oops' | 'thinking' | 'tool' | 'waiting'
+export type Mode = 'idle' | 'sleep' | 'typing' | 'watching' | 'happy' | 'oops' | 'thinking' | 'working' | 'waiting'
 
 export type Sim = {
   t: number
@@ -68,7 +69,7 @@ export const step = (s: Sim, columns: number): Sim => {
   target = clamp(target, left, home)
 
   const mode = modeOf({ ...s, t })
-  if (mode === 'tool' && t % 200 === 0) {
+  if (mode === 'working' && t % 200 === 0) {
     if (x <= left) dir = 1
     if (x >= home) dir = -1
     x += 2 * dir
@@ -90,19 +91,23 @@ const ARMS = '.##############.'
 const ARMS_EYES_DOWN = '.####.####.####.' // the eyes drop into the arm row: looking down at the prompt
 const LEGS = ['....#.#..#.#....', '...#.#....#.#...']
 
-// The thought bubble left of the head, in the order its parts appear: a dot, a bigger dot, a cloud.
+// The thought bubble over the sitting critter's head, relative to its top-left, in the order its
+// parts appear: a dot by its head, a bigger dot, then a cloud right above it.
 const BUBBLE: [number, number][][] = [
-  [[-1, 1]],
-  [[-4, 0], [-3, 0]],
-  [[-9, 0], [-8, 0], [-7, 0], [-10, 1], [-9, 1], [-8, 1], [-7, 1], [-6, 1]],
+  [[15, -1]],
+  [[12, -2], [13, -2]],
+  [
+    ...[4, 5, 6, 7, 8, 9].map((dx): [number, number] => [dx, -4]),
+    ...[3, 4, 5, 6, 7, 8, 9, 10].map((dx): [number, number] => [dx, -3]),
+  ],
 ]
 
-const sprite = (eyes: Eyes, stride: number, lying: boolean) => [
+const sprite = (eyes: Eyes, stride: number, tucked: boolean) => [
   BODY,
   EYES[eyes],
   eyes === 'down' ? ARMS_EYES_DOWN : ARMS,
   BODY,
-  ...(lying ? [] : [LEGS[stride % 2]!]),
+  ...(tucked ? [] : [LEGS[stride % 2]!]),
 ]
 
 export const draw = (s: Sim, columns: number): string[] => {
@@ -114,11 +119,11 @@ export const draw = (s: Sim, columns: number): string[] => {
 
   const beat = Math.floor(s.t / TICK)
   let x = Number.isFinite(s.x) ? s.x : even(Math.max(0, width - SPRITE_WIDTH - 4))
-  // Rests on the top pixel row so it lines up with the logo; hops dip half a cell.
-  let y = 0
+  // Stands on whole cells so it lines up with the logo; hops dip half a cell.
+  let y = REST
   let eyes: Eyes = 'front'
   let stride = 0
-  let lying = false
+  let tucked = false // legs folded under: lying down asleep, or sitting to think
   let mark: string | null = null
 
   switch (modeOf(s)) {
@@ -128,20 +133,20 @@ export const draw = (s: Sim, columns: number): string[] => {
       break
     case 'sleep':
       eyes = 'shut'
-      lying = true
-      y = 2
-      if (beat % 30 < 10) plot(x + 1, 1)
-      else if (beat % 30 < 20) plot(x, 0)
+      tucked = true
+      y = REST + 2
+      if (beat % 30 < 10) plot(x + 1, y - 1)
+      else if (beat % 30 < 20) plot(x, y - 2)
       break
     case 'typing':
-      y = beat % 2
+      y = REST + (beat % 2)
       stride = beat
       break
     case 'watching':
       eyes = beat % 40 === 0 ? 'shut' : 'down'
       break
     case 'happy':
-      y = beat % 4 < 2 ? 1 : 0
+      y = REST + (beat % 4 < 2 ? 1 : 0)
       plot(x - 2, beat % 2 ? 0 : 3)
       plot(x + SPRITE_WIDTH + 1, beat % 2 ? 3 : 0)
       break
@@ -150,23 +155,25 @@ export const draw = (s: Sim, columns: number): string[] => {
       eyes = 'shut'
       break
     case 'thinking': {
-      // Stays put, eyes darting side to side, while a thought bubble grows beside it and pops.
+      // Sits down, eyes darting side to side, while a thought bubble grows over its head and pops.
+      tucked = true
+      y = REST + 2
       eyes = Math.floor(beat / 7) % 2 ? 'right' : 'left'
       const phase = beat % 20
       const stages = phase < 3 || phase >= 17 ? 0 : Math.min(3, Math.floor((phase + 1) / 4))
-      BUBBLE.slice(0, stages).flat().forEach(([dx, dy]) => plot(x + dx, dy))
+      BUBBLE.slice(0, stages).flat().forEach(([dx, dy]) => plot(x + dx, y + dy))
       break
     }
-    case 'tool':
+    case 'working':
       stride = Math.floor(beat / 2)
       break
     case 'waiting':
-      y = beat % 12 < 2 ? 1 : 0
+      y = REST + (beat % 12 < 2 ? 1 : 0)
       mark = '?'
       break
   }
 
-  sprite(eyes, stride, lying).forEach((row, dy) =>
+  sprite(eyes, stride, tucked).forEach((row, dy) =>
     [...row].forEach((p, dx) => p === '#' && plot(x + dx, y + dy)),
   )
 

@@ -13,8 +13,8 @@ The critter from the Claude Code welcome logo, one cell narrower, sits at the ri
 | ![](docs/idle.gif) | **Idle**: blinks, and strolls somewhere new every few seconds |
 | ![](docs/typing.gif) | **You start writing**: bounces for the first 3 seconds |
 | ![](docs/watching.gif) | **You keep writing**: stands still looking down at the prompt until you send or clear it |
-| ![](docs/thinking.gif) | **Claude is thinking**: stays put, eyes darting side to side, while a thought bubble grows and pops |
-| ![](docs/working.gif) | **A tool is running** (a subagent's too): scuttles back and forth |
+| ![](docs/thinking.gif) | **Claude is deep in thought** (extended thinking): stays put, eyes darting side to side, while a thought bubble grows and pops |
+| ![](docs/working.gif) | **Claude is working** (writing its reply, calling tools, waiting on them or on subagents): scuttles back and forth |
 | ![](docs/done.gif) | **The turn is done**: bounces with sparkles |
 | ![](docs/asleep.gif) | **Nothing for 2 minutes**: lies down and falls asleep |
 

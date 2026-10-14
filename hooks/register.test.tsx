@@ -16,9 +16,10 @@ const band = (isWorking: boolean) => ({
 })
 
 test('at rest it is the welcome logo, one cell narrower', () => {
-  const lines = draw(run(initial(IDLE), 300), 40).map(line => line.trimEnd())
-  const at = lines[1]!.search(/\S/)
-  expect(lines.map(line => line.slice(at))).toEqual([' ▐▛██▜▌', '▝▜████▛▘', '  ▘▘▝▝'])
+  const [headroom, ...rows] = draw(run(initial(IDLE), 300), 40).map(line => line.trimEnd())
+  expect(headroom).toBe('')
+  const at = rows[1]!.search(/\S/)
+  expect(rows.map(line => line.slice(at))).toEqual([' ▐▛██▜▌', '▝▜████▛▘', '  ▘▘▝▝'])
 })
 
 test('falls asleep after two quiet minutes', () => {
@@ -48,9 +49,9 @@ test('goes back to idle when the draft is cleared, and thinks once it is sent', 
   expect(modeOf(receive(s, { ...s.props, drafting: false, isWorking: true }))).toBe('thinking')
 })
 
-test('scuttles while a tool runs', () => {
-  const s = run(initial({ ...IDLE, isWorking: true, activity: 'tool' }), 100)
-  expect(modeOf(s)).toBe('tool')
+test('scuttles while working', () => {
+  const s = run(initial({ ...IDLE, isWorking: true, activity: 'working' }), 100)
+  expect(modeOf(s)).toBe('working')
   expect(run(s, 500).x).not.toBe(s.x)
 })
 
@@ -81,4 +82,15 @@ test('thinks in place, eyes darting, while a thought bubble grows and pops', () 
   expect(later.x).toBe(thinking.x)
   const frames = new Set(Array.from({ length: 20 }, (_, i) => draw(run(thinking, i * 100), 40).join('\n')))
   expect(frames.size).toBeGreaterThan(3)
+})
+
+test('the thought cloud floats over its head, not off to the side', () => {
+  let s = run(initial({ ...IDLE, isWorking: true, activity: 'thinking' }), 100)
+  while (Math.floor(s.t / 100) % 20 !== 12) s = run(s, 100)
+  const [cloud, , head, arms] = draw(s, 40)
+  const span = (line: string) => [line.search(/\S/), line.trimEnd().length]
+  const [cloudFrom, cloudTo] = span(cloud!)
+  expect(cloudFrom).toBeGreaterThanOrEqual(span(arms!)[0]!)
+  expect(cloudTo).toBeLessThanOrEqual(span(arms!)[1]!)
+  expect(head!.trim()).not.toBe('')
 })

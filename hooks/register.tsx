@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { Activity, Blip, CritterProps, Mood } from '../types'
 
-const CALM: Mood = { activity: 'thinking', blip: null, seq: 0, drafting: false }
+const CALM: Mood = { activity: 'working', blip: null, seq: 0, drafting: false }
 
 export const mood = atom({ plugin: 'mascot', key: 'mood' } as const, CALM)
 
@@ -16,8 +16,6 @@ const react = ($: EngineInterface, blip: Blip) =>
   update($, mood, m => ({ ...m, blip, seq: m.seq + 1 })).catch(() => undefined)
 
 export const register: Register = on => {
-  let toolsRunning = 0
-
   on('prompt.edit', async ($, e, next) => {
     const box = await next(e)
     const drafting = box.text.trim() !== ''
@@ -31,13 +29,31 @@ export const register: Register = on => {
   })
 
   on('turn.start', async ($, e, next) => {
-    await setActivity($, 'thinking')
+    await setActivity($, 'working')
     return next(e)
   })
 
+  // Deep thinking is the main agent's response streaming thinking; its text and tool calls are work.
+  on('turn.step', async function* ($, e, next) {
+    if (e.agentId) {
+      return yield* next(e)
+    }
+    let deep = false
+    for await (const chunk of next(e)) {
+      const isThinking = chunk.kind === 'thinking'
+      if (isThinking !== deep && (isThinking || chunk.kind === 'text' || chunk.kind === 'tool' || chunk.kind === 'input')) {
+        deep = isThinking
+        await setActivity($, deep ? 'thinking' : 'working')
+      }
+      yield chunk
+    }
+  })
+
   on('tool.call', async ($, e, next) => {
-    toolsRunning += 1
-    await setActivity($, String(e.tool) === 'AskUserQuestion' ? 'waiting' : 'tool')
+    if (e.agentId) {
+      return next(e)
+    }
+    await setActivity($, String(e.tool) === 'AskUserQuestion' ? 'waiting' : 'working')
     try {
       const result = await next(e)
       if (result.isError) {
@@ -45,8 +61,7 @@ export const register: Register = on => {
       }
       return result
     } finally {
-      toolsRunning -= 1
-      await setActivity($, toolsRunning > 0 ? 'tool' : 'thinking')
+      await setActivity($, 'working')
     }
   })
 
@@ -74,6 +89,6 @@ export const register: Register = on => {
     const { Client } = $.ui.resolve(e)
     const props: CritterProps = { ...(await read($, mood)), isWorking: e.props.isWorking }
 
-    return <Client key="critter" module="./critter.tsx" props={props} width="100%" height={3} />
+    return <Client key="critter" module="./critter.tsx" props={props} width="100%" height={4} />
   })
 }
