@@ -1,1 +1,22 @@
-{ "name": "mascot", "version": "0.3.0", "description": "A little Claude mascot above the prompt that wanders and reacts to the session", "author": { "name": "Rosalie Perron" }, "types": "./types/index.d.ts" }
+{
+  "name": "mascot",
+  "version": "0.3.0",
+  "description": "A little Claude mascot above the prompt that wanders and reacts to the session",
+  "author": {
+    "name": "Rosalie Perron"
+  },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "position": {
+      "type": "string",
+      "title": "Position",
+      "description": "Where the mascot lives in the row above the prompt",
+      "options": [
+        "left",
+        "center",
+        "right"
+      ],
+      "default": "right"
+    }
+  }
+}

@@ -1,22 +1,23 @@
 import type { ClientModule } from 'claude-code'
 
-import type { CritterProps } from '../types'
+import type { CritterProps, Position } from '../types'
 
 // Each cell is 2x2 pixels; index = topLeft*8 + topRight*4 + bottomLeft*2 + bottomRight.
 const QUADS = ' ▗▖▄▝▐▞▟▘▚▌▙▀▜▛█'
 const ROWS = 4
 const REST = 2 // the pixel row it stands on; the row of cells above is headroom for hops and its thought bubble
 const TICK = 100
-const ROAM = 40 // pixels the critter wanders left of its home at the right edge
+const ROAM = 40 // pixels of the row the critter wanders over, from its home
 const SPRITE_WIDTH = 16
 const SLEEP_AFTER = 120_000
 const BLIP_MS = { typing: 1200, happy: 1600, oops: 1000 }
 const BOUNCE_FOR = 3000 // then it stands and watches the prompt until the draft is sent
 const SWITCH_EVERY = 12_000 // a state that lasts this long moves on to another of its animations
+const POKE_MS = 1200 // how long it reacts to a click
 
 type Eyes = 'front' | 'left' | 'right' | 'down' | 'downLeft' | 'downRight' | 'shut'
 type ArmRow = 0 | 1 | 2 | 3 // the body row an arm sticks out of; 2 is where it rests
-export type Mode = 'idle' | 'sleep' | 'typing' | 'watching' | 'happy' | 'oops' | 'thinking' | 'working' | 'waiting'
+export type Mode = 'idle' | 'sleep' | 'typing' | 'watching' | 'happy' | 'oops' | 'thinking' | 'working' | 'waiting' | 'poked'
 
 export type Sim = {
   t: number
@@ -28,6 +29,7 @@ export type Sim = {
   changedAt: number
   blipAt: number
   draftSince: number
+  pokeAt: number
   mode: Mode
   variant: number // which of the mode's animations is playing
   variantAt: number
@@ -44,6 +46,7 @@ export const initial = (props: CritterProps): Sim => {
     changedAt: 0,
     blipAt: -Infinity,
     draftSince: -Infinity,
+    pokeAt: -Infinity,
     mode: 'idle',
     variant: 0,
     variantAt: 0,
@@ -53,6 +56,7 @@ export const initial = (props: CritterProps): Sim => {
 
 export const modeOf = (s: Sim): Mode => {
   const { blip, isWorking, activity, drafting } = s.props
+  if (s.t - s.pokeAt < POKE_MS) return 'poked'
   if (blip && s.t - s.blipAt < BLIP_MS[blip] && (blip !== 'typing' || s.t - s.draftSince < BOUNCE_FOR)) return blip
   if (isWorking) return activity
   if (drafting) return 'watching'
@@ -61,6 +65,8 @@ export const modeOf = (s: Sim): Mode => {
 
 export const receive = (s: Sim, props: CritterProps): Sim => ({
   ...s,
+  // A new position sends it straight to its new home.
+  ...(props.position !== s.props.position && { x: Infinity, target: Infinity }),
   props,
   changedAt: s.t,
   blipAt: props.seq !== s.props.seq ? s.t : s.blipAt,
@@ -77,14 +83,46 @@ const pick = (count: number, avoid: number) => {
   return others && n >= avoid ? n + 1 : n
 }
 
+// Its home and the stretch of the row it wanders over, in pixels: from its edge inward, or around the middle.
+const patch = (columns: number, position: Position) => {
+  const last = even(Math.max(0, columns * 2 - SPRITE_WIDTH - 4))
+  if (position === 'left') {
+    const home = Math.min(4, last)
+    return { home, lo: home, hi: Math.min(last, home + ROAM) }
+  }
+  if (position === 'center') {
+    const home = even(Math.floor(last / 2))
+    return { home, lo: Math.max(0, home - ROAM / 2), hi: Math.min(last, home + ROAM / 2) }
+  }
+  return { home: last, lo: Math.max(0, last - ROAM), hi: last }
+}
+
+// Where it stands, in pixels: at home until it has taken its first step.
+const xOf = (s: Sim, columns: number) => (Number.isFinite(s.x) ? s.x : patch(columns, s.props.position).home)
+
+// A click on the mascot: it reacts at once, with a different reaction than the one playing, and wakes up.
+export const poke = (s: Sim): Sim => ({
+  ...s,
+  pokeAt: s.t,
+  changedAt: s.t,
+  mode: 'poked',
+  variant: pick(ANIMATIONS.poked.length, s.mode === 'poked' ? s.variant : -1),
+  variantAt: s.t,
+})
+
+// Whether a click at this cell lands on the mascot, a cell of slack on either side.
+export const hits = (s: Sim, columns: number, cell: { x: number }) => {
+  const from = Math.floor(xOf(s, columns) / 2)
+  return cell.x >= from - 1 && cell.x <= from + SPRITE_WIDTH / 2
+}
+
 // Moves a whole cell (2px) at a time so the sprite always lands crisp.
 export const step = (s: Sim, columns: number): Sim => {
   const t = s.t + TICK
-  const home = even(Math.max(0, columns * 2 - SPRITE_WIDTH - 4))
-  const left = even(Math.max(0, home - ROAM))
+  const { home, lo, hi } = patch(columns, s.props.position)
   let { x, dir, target, nextStroll, variant, variantAt } = s
-  x = clamp(x, left, home)
-  target = clamp(target, left, home)
+  x = clamp(Number.isFinite(x) ? x : home, lo, hi)
+  target = clamp(Number.isFinite(target) ? target : home, lo, hi)
 
   // Entering a state picks one of its animations at random; staying in it long enough picks another.
   const mode = modeOf({ ...s, t })
@@ -94,12 +132,12 @@ export const step = (s: Sim, columns: number): Sim => {
   }
 
   if (mode === 'working' && ANIMATIONS.working[variant]?.travels && t % 200 === 0) {
-    if (x <= left) dir = 1
-    if (x >= home) dir = -1
+    if (x <= lo) dir = 1
+    if (x >= hi) dir = -1
     x += 2 * dir
   } else if (mode === 'idle') {
     if (x === target && t >= nextStroll) {
-      target = left + 2 * Math.floor(Math.random() * ((home - left) / 2 + 1))
+      target = lo + 2 * Math.floor(Math.random() * ((hi - lo) / 2 + 1))
       nextStroll = t + 6000 + Math.random() * 9000
     }
     if (x !== target && t % 400 === 0) x += 2 * Math.sign(target - x)
@@ -135,6 +173,8 @@ const BUBBLE: [number, number][][] = [
   ],
 ]
 const JUMP = [0, 1, 2, 2, 1, 0, 0, 0]
+const STARTLE = [1, 2, 2, 2, 1]
+const SPIN: Eyes[] = ['front', 'left', 'shut', 'right', 'front'] // shut, it shows the back of its head
 
 type Pose = {
   x: number
@@ -152,6 +192,7 @@ type Plot = (x: number, y: number) => void
 type Animation = { travels?: boolean; act: (pose: Pose, beat: number, plot: Plot, s: Sim) => void }
 
 const blink = (beat: number) => beat % 40 === 0
+const sincePoke = (s: Sim) => Math.floor((s.t - s.pokeAt) / TICK)
 const strolling = (p: Pose, s: Sim, beat: number) => (p.x !== s.target ? Math.floor(beat / 4) : 0)
 const bothArms = (row: ArmRow) => ({ left: row, right: row })
 const sparkle = (p: Pose, beat: number, plot: Plot) => {
@@ -318,6 +359,36 @@ export const ANIMATIONS: Record<Mode, Animation[]> = {
       p.mark = '?'
     } },
   ],
+  poked: [
+    // Giggles, eyes squeezed shut, hands flapping by its face.
+    { act: (p, beat) => {
+      p.eyes = 'shut'
+      p.y += beat % 2
+      p.arms = bothArms(beat % 2 ? 1 : 2)
+    } },
+    // Jumps in surprise.
+    { act: (p, _, __, s) => {
+      const k = sincePoke(s)
+      p.y -= STARTLE[k] ?? 0
+      if (k < 8) p.mark = '!'
+    } },
+    // Spins around on the spot.
+    { act: (p, _, __, s) => {
+      const k = sincePoke(s)
+      p.eyes = SPIN[Math.floor(k / 2)] ?? 'front'
+      p.stride = k
+    } },
+    // Plays peekaboo: ducks down hiding, peeks out, then pops back up.
+    { act: (p, _, __, s) => {
+      const k = sincePoke(s)
+      if (k < 8) {
+        sitDown(p)
+        p.eyes = k < 4 ? 'shut' : 'front'
+      } else if (k < 10) {
+        p.y -= 1
+      }
+    } },
+  ],
 }
 
 const sprite = (p: Pose) => {
@@ -344,7 +415,7 @@ export const draw = (s: Sim, columns: number): string[] => {
   const animation = (s.mode === mode && animations[s.variant]) || animations[0]!
   // Stands on whole cells so it lines up with the logo; hops dip half a cell.
   const pose: Pose = {
-    x: Number.isFinite(s.x) ? s.x : even(Math.max(0, width - SPRITE_WIDTH - 4)),
+    x: xOf(s, columns),
     y: REST,
     eyes: 'front',
     stride: 0,
@@ -380,12 +451,17 @@ const Critter: ClientModule<CritterProps, Sim> = (props, surface) => {
   const s = surface.state
   if (s === undefined) {
     surface.every(TICK, () => surface.setState(step(surface.state!, surface.columns)))
+    surface.onPointer(event => {
+      const now = surface.state
+      if (now && event.type === 'down' && hits(now, surface.columns, event)) surface.setState(poke(now))
+    })
     surface.setState(initial(props))
   } else if (
     s.props.seq !== props.seq ||
     s.props.isWorking !== props.isWorking ||
     s.props.activity !== props.activity ||
-    s.props.drafting !== props.drafting
+    s.props.drafting !== props.drafting ||
+    s.props.position !== props.position
   ) {
     surface.setState(receive(s, props))
   }

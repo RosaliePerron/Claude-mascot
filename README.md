@@ -20,6 +20,8 @@ The critter from the Claude Code welcome logo, one cell narrower, sits at the ri
 
 It also shakes, or flinches and shivers, with its eyes squeezed shut when a turn is interrupted or a tool fails.
 
+Click it and it reacts: it giggles, jumps in surprise, spins around, or plays peekaboo, a different one each click. A click wakes it up too.
+
 The mascot shows in the terminal and in the desktop app; VS Code and mobile don't draw the row above the prompt.
 
 ## Install
@@ -47,6 +49,18 @@ Load it for one session with `claude --plugin-dir ~/projects/mascot`, or for eve
 ```
 
 Loaded this way, edits to the folder reload in interactive sessions as you save.
+
+## Settings
+
+**Position**: `left`, `center` or `right` (the default), where the mascot lives in the row above the prompt. Installing asks for it; change it later in `/config`, or in `~/.claude/settings.json`:
+
+```json
+{
+  "pluginConfigs": { "mascot@mascot": { "options": { "position": "left" } } }
+}
+```
+
+Loaded from a clone, the key is `mascot` instead of `mascot@mascot`.
 
 ## Updating
 

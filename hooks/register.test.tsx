@@ -1,10 +1,10 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { CritterProps } from '../types'
-import { ANIMATIONS, draw, initial, modeOf, receive, step } from './critter'
+import { ANIMATIONS, draw, initial, modeOf, poke, receive, step } from './critter'
 import type { Mode, Sim } from './critter'
 
-const IDLE: CritterProps = { activity: 'thinking', blip: null, seq: 0, drafting: false, isWorking: false }
+const IDLE: CritterProps = { activity: 'thinking', blip: null, seq: 0, drafting: false, isWorking: false, position: 'right' }
 
 const run = (s: ReturnType<typeof initial>, ms: number) => {
   for (let t = 0; t < ms; t += 100) s = step(s, 40)
@@ -109,10 +109,11 @@ const inState = (mode: Mode): Sim => {
     thinking: { isWorking: true, activity: 'thinking' },
     working: { isWorking: true, activity: 'working' },
     waiting: { isWorking: true, activity: 'waiting' },
+    poked: {},
   }
   const s = initial({ ...IDLE, ...props[mode] })
   const quiet = mode === 'sleep' ? 0 : at
-  return { ...s, t: at, x: 40, target: 40, changedAt: quiet, blipAt: at, draftSince: at, mode }
+  return { ...s, t: at, x: 40, target: 40, changedAt: quiet, blipAt: at, draftSince: at, pokeAt: mode === 'poked' ? at : -Infinity, mode }
 }
 
 const frames = (s: Sim) =>
@@ -140,4 +141,49 @@ test('picks an animation at random on entering a state, and moves on to another 
   expect(picked.size).toBeGreaterThan(1)
   const thinking = run(initial({ ...IDLE, isWorking: true, activity: 'thinking' }), 100)
   expect(run(thinking, 12_500).variant).not.toBe(thinking.variant)
+})
+
+test('a click sets off a random reaction, a different one on each click, and wakes it up', () => {
+  const asleep = run(initial(IDLE), 121_000)
+  expect(modeOf(asleep)).toBe('sleep')
+  const poked = poke(asleep)
+  expect(modeOf(poked)).toBe('poked')
+  expect(modeOf(run(poked, 1500))).toBe('idle')
+  const next = new Set(Array.from({ length: 40 }, () => poke(poked).variant))
+  expect(next.size).toBeGreaterThan(1)
+  expect(next.has(poked.variant)).toBe(false)
+})
+
+test('only a click on the mascot itself sets it off', async $ => {
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'mascot', surface, ...band(false) })
+    await ui.resize({ columns: 40, rows: 4 })
+    await ui.advance(300)
+    const before = JSON.stringify(await ui.drawn({ in: 'critter' }))
+    await ui.pointer({ type: 'down', x: 2, y: 1, button: 'left' })
+    await ui.advance(100)
+    expect(JSON.stringify(await ui.drawn({ in: 'critter' }))).toBe(before)
+    await ui.pointer({ type: 'down', x: 33, y: 1, button: 'left' })
+    await ui.advance(100)
+    expect(JSON.stringify(await ui.drawn({ in: 'critter' }))).not.toBe(before)
+    await ui.unmount()
+  }
+})
+
+test('stands at the left, in the center or at the right, as configured', () => {
+  const armsAt = (position: CritterProps['position']) => draw(run(initial({ ...IDLE, position }), 300), 40)[2]!.search(/\S/)
+  expect(armsAt('left')).toBe(2)
+  expect(armsAt('center')).toBe(15)
+  expect(armsAt('right')).toBe(30)
+})
+
+test('a new position sends it straight to its new home', () => {
+  const atRight = run(initial(IDLE), 300)
+  expect(run(receive(atRight, { ...IDLE, position: 'left' }), 100).x).toBe(4)
+})
+
+test('the position setting reaches the mascot', { options: { position: 'center' } }, async $ => {
+  const ui = await $.ui.mount({ plugin: 'mascot', surface: 'terminal', ...band(false) })
+  expect(JSON.stringify(await ui.drawn())).toContain('"position":"center"')
+  await ui.unmount()
 })

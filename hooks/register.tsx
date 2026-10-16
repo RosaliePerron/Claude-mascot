@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Activity, Blip, CritterProps, Mood } from '../types'
+import type { Activity, Blip, CritterProps, Mood, Position } from '../types'
 
 const CALM: Mood = { activity: 'working', blip: null, seq: 0, drafting: false }
 
@@ -15,7 +15,9 @@ const setActivity = ($: EngineInterface, activity: Activity) =>
 const react = ($: EngineInterface, blip: Blip) =>
   update($, mood, m => ({ ...m, blip, seq: m.seq + 1 })).catch(() => undefined)
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  const position: Position = options.position === 'left' || options.position === 'center' ? options.position : 'right'
+
   on('prompt.edit', async ($, e, next) => {
     const box = await next(e)
     const drafting = box.text.trim() !== ''
@@ -87,7 +89,7 @@ export const register: Register = on => {
     }
 
     const { Client } = $.ui.resolve(e)
-    const props: CritterProps = { ...(await read($, mood)), isWorking: e.props.isWorking }
+    const props: CritterProps = { ...(await read($, mood)), isWorking: e.props.isWorking, position }
 
     return <Client key="critter" module="./critter.tsx" props={props} width="100%" height={4} />
   })
