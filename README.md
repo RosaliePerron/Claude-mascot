@@ -6,19 +6,19 @@ A little animated Claude critter for [Claude Code](https://claude.com/claude-cod
 
 ## What it does
 
-The critter from the Claude Code welcome logo, one cell narrower, sits at the right edge above the prompt in your theme's Claude color:
+The critter from the Claude Code welcome logo, one cell narrower, sits at the right edge above the prompt in your theme's Claude color. Each state has a few animations; the mascot picks one at random each time it gets there, and switches to another every 12 seconds while a state lasts:
 
 | | |
 | --- | --- |
-| ![](docs/idle.gif) | **Idle**: blinks, and strolls somewhere new every few seconds |
-| ![](docs/typing.gif) | **You start writing**: bounces for the first 3 seconds |
-| ![](docs/watching.gif) | **You keep writing**: stands still looking down at the prompt until you send or clear it |
-| ![](docs/thinking.gif) | **Claude is deep in thought** (extended thinking): stays put, eyes darting side to side, while a thought bubble grows and pops |
-| ![](docs/working.gif) | **Claude is working** (writing its reply, calling tools, waiting on them or on subagents): scuttles back and forth |
-| ![](docs/done.gif) | **The turn is done**: bounces with sparkles |
-| ![](docs/asleep.gif) | **Nothing for 2 minutes**: lies down and falls asleep |
+| ![](docs/idle.gif) | **Idle**: strolls somewhere new every few seconds while blinking, looking around, or waving |
+| ![](docs/typing.gif) | **You start writing**: for the first 3 seconds bounces, tap-dances, or cheers |
+| ![](docs/watching.gif) | **You keep writing**: stands looking down at the prompt, reading along or nodding, until you send or clear it |
+| ![](docs/thinking.gif) | **Claude is deep in thought** (extended thinking): sits down and grows a thought cloud over its head, follows a spark of an idea, or scratches its head |
+| ![](docs/working.gif) | **Claude is working** (writing its reply, calling tools, waiting on them or on subagents): scuttles back and forth, hops along, or hammers away on the spot |
+| ![](docs/done.gif) | **The turn is done**: bounces, throws its arms up, or jumps for joy, with sparkles |
+| ![](docs/asleep.gif) | **Nothing for 2 minutes**: lies down and falls asleep, breathing slowly, or dozes off on its feet |
 
-It also shakes with its eyes squeezed shut when a turn is interrupted or a tool fails.
+It also shakes, or flinches and shivers, with its eyes squeezed shut when a turn is interrupted or a tool fails.
 
 The mascot shows in the terminal and in the desktop app; VS Code and mobile don't draw the row above the prompt.
 

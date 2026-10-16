@@ -1,7 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { CritterProps } from '../types'
-import { draw, initial, modeOf, receive, step } from './critter'
+import { ANIMATIONS, draw, initial, modeOf, receive, step } from './critter'
+import type { Mode, Sim } from './critter'
 
 const IDLE: CritterProps = { activity: 'thinking', blip: null, seq: 0, drafting: false, isWorking: false }
 
@@ -93,4 +94,50 @@ test('the thought cloud floats over its head, not off to the side', () => {
   expect(cloudFrom).toBeGreaterThanOrEqual(span(arms!)[0]!)
   expect(cloudTo).toBeLessThanOrEqual(span(arms!)[1]!)
   expect(head!.trim()).not.toBe('')
+})
+
+// A critter caught in each state, a moment after it began.
+const inState = (mode: Mode): Sim => {
+  const at = 130_000
+  const props: Record<Mode, Partial<CritterProps>> = {
+    idle: {},
+    sleep: {},
+    typing: { blip: 'typing', drafting: true },
+    watching: { drafting: true },
+    happy: { blip: 'happy' },
+    oops: { blip: 'oops' },
+    thinking: { isWorking: true, activity: 'thinking' },
+    working: { isWorking: true, activity: 'working' },
+    waiting: { isWorking: true, activity: 'waiting' },
+  }
+  const s = initial({ ...IDLE, ...props[mode] })
+  const quiet = mode === 'sleep' ? 0 : at
+  return { ...s, t: at, x: 40, target: 40, changedAt: quiet, blipAt: at, draftSince: at, mode }
+}
+
+const frames = (s: Sim) =>
+  Array.from({ length: 9 }, (_, i) => draw({ ...s, t: s.t + i * 100 }, 40).join('\n')).join('\n--\n')
+
+test('every state but waiting has alternate animations, each its own and all drawing the critter', () => {
+  for (const mode of Object.keys(ANIMATIONS) as Mode[]) {
+    const base = inState(mode)
+    expect(modeOf(base)).toBe(mode)
+    const looks = ANIMATIONS[mode].map((_, variant) => frames({ ...base, variant }))
+    if (mode !== 'waiting') expect(looks.length).toBeGreaterThan(1)
+    expect(new Set(looks).size).toBe(looks.length)
+    for (const look of looks) {
+      expect(look).toMatch(/[▐▌█]/)
+      expect(look).not.toMatch(/[a-z]/i)
+    }
+  }
+})
+
+test('picks an animation at random on entering a state, and moves on to another when it lasts', () => {
+  const idle = step(initial(IDLE), 40)
+  const picked = new Set(
+    Array.from({ length: 60 }, () => step(receive(idle, { ...IDLE, isWorking: true, activity: 'working' }), 40).variant),
+  )
+  expect(picked.size).toBeGreaterThan(1)
+  const thinking = run(initial({ ...IDLE, isWorking: true, activity: 'thinking' }), 100)
+  expect(run(thinking, 12_500).variant).not.toBe(thinking.variant)
 })
