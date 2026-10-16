@@ -48,6 +48,19 @@ Load it for one session with `claude --plugin-dir ~/projects/mascot`, or for eve
 
 Loaded this way, edits to the folder reload in interactive sessions as you save.
 
+## Updating
+
+Claude Code runs the copy it made when you installed the mascot, so a new release arrives when you update it:
+
+```sh
+claude plugin marketplace update mascot
+claude plugin update mascot@mascot
+```
+
+Then restart Claude Code. To get new releases without asking, open `/plugin`, go to the `mascot` marketplace and choose **Enable auto-update**: Claude Code then updates it each time it starts.
+
+If you load the mascot from a clone instead, `git pull` in that folder is the update.
+
 ## Development
 
 ```sh

@@ -1,1 +1,1 @@
-{ "name": "mascot", "version": "0.2.0", "description": "A little Claude mascot above the prompt that wanders and reacts to the session", "author": { "name": "Rosalie Perron" }, "types": "./types/index.d.ts" }
+{ "name": "mascot", "version": "0.3.0", "description": "A little Claude mascot above the prompt that wanders and reacts to the session", "author": { "name": "Rosalie Perron" }, "types": "./types/index.d.ts" }
