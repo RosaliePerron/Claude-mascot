@@ -1,10 +1,20 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { CritterProps } from '../types'
-import { ANIMATIONS, draw, initial, modeOf, poke, receive, step } from './critter'
+import { crewRoom, lineUp } from './register'
+import { ANIMATIONS, crop, draw, initial, modeOf, poke, receive, step } from './critter'
 import type { Mode, Sim } from './critter'
 
-const IDLE: CritterProps = { activity: 'thinking', blip: null, seq: 0, drafting: false, isWorking: false, position: 'right' }
+const IDLE: CritterProps = {
+  activity: 'thinking',
+  blip: null,
+  seq: 0,
+  drafting: false,
+  isWorking: false,
+  position: 'right',
+  isHelper: false,
+  isLeaving: false,
+}
 
 const run = (s: ReturnType<typeof initial>, ms: number) => {
   for (let t = 0; t < ms; t += 100) s = step(s, 40)
@@ -110,10 +120,13 @@ const inState = (mode: Mode): Sim => {
     working: { isWorking: true, activity: 'working' },
     waiting: { isWorking: true, activity: 'waiting' },
     poked: {},
+    entering: { isHelper: true, isWorking: true },
+    leaving: { isHelper: true, isLeaving: true },
   }
   const s = initial({ ...IDLE, ...props[mode] })
   const quiet = mode === 'sleep' ? 0 : at
-  return { ...s, t: at, x: 40, target: 40, changedAt: quiet, blipAt: at, draftSince: at, pokeAt: mode === 'poked' ? at : -Infinity, mode }
+  const t = mode === 'entering' ? 0 : at
+  return { ...s, t, x: 40, target: 40, changedAt: quiet, blipAt: at, draftSince: at, pokeAt: mode === 'poked' ? at : -Infinity, leftAt: at, mode }
 }
 
 const frames = (s: Sim) =>
@@ -186,4 +199,37 @@ test('the position setting reaches the mascot', { options: { position: 'center' 
   const ui = await $.ui.mount({ plugin: 'mascot', surface: 'terminal', ...band(false) })
   expect(JSON.stringify(await ui.drawn())).toContain('"position":"center"')
   await ui.unmount()
+})
+
+test("subagents' mascots line up beside the main one, toward the middle of the row", () => {
+  const kinds = (position: CritterProps['position']) =>
+    lineUp(position, ['a', 'b']).map(slot => (slot.kind === 'helper' ? slot.id : slot.kind)).join(' ')
+  expect(kinds('right')).toBe('space a b main')
+  expect(kinds('left')).toBe('main a b space')
+  expect(kinds('center')).toBe('space main a b space')
+})
+
+test('squeezed for rows, it drops its headroom first, then keeps its head and arms', () => {
+  const lines = draw(run(initial(IDLE), 300), 40)
+  expect(crop(lines, 4)).toEqual(lines)
+  expect(crop(lines, 3)).toEqual(lines.slice(1))
+  expect(crop(lines, 2)).toEqual(lines.slice(1, 3))
+})
+
+test("subagents' mascots share the free row, each up to as much room as the main one", () => {
+  expect(crewRoom(96, 1)).toEqual({ shown: 1, width: 32 })
+  expect(crewRoom(96, 2)).toEqual({ shown: 2, width: 32 })
+  expect(crewRoom(96, 4)).toEqual({ shown: 4, width: 16 })
+  expect(crewRoom(96, 8)).toEqual({ shown: 5, width: 12 })
+  expect(crewRoom(30, 2).shown).toBe(0)
+})
+
+test("a subagent's mascot makes a random entrance, and an exit when told to leave; the main one never does", () => {
+  const helper: CritterProps = { ...IDLE, isHelper: true, isWorking: true, activity: 'working' }
+  expect(modeOf(initial(helper))).toBe('entering')
+  expect(modeOf(run(initial(helper), 900))).toBe('working')
+  expect(new Set(Array.from({ length: 40 }, () => initial(helper).variant)).size).toBeGreaterThan(1)
+  expect(modeOf(initial({ ...IDLE, isWorking: true, activity: 'working' }))).toBe('working')
+  const done = run(initial(helper), 2000)
+  expect(modeOf(receive(done, { ...helper, isWorking: false, isLeaving: true }))).toBe('leaving')
 })

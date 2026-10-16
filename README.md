@@ -20,6 +20,10 @@ The critter from the Claude Code welcome logo, one cell narrower, sits at the ri
 
 It also shakes, or flinches and shivers, with its eyes squeezed shut when a turn is interrupted or a tool fails.
 
+When Claude runs subagents, each one gets a mascot of its own beside the main one, acting out what that subagent is doing with the same animations. It makes an entrance (dropping in, popping up out of the ground, or beaming in) and, once its subagent finishes and it has celebrated, an exit (jumping away, sinking into the ground, or waving goodbye before vanishing in a puff).
+
+![Two subagents' mascots appear beside the main one while they work, then celebrate and leave](docs/subagents.gif)
+
 Click it and it reacts: it giggles, jumps in surprise, spins around, or plays peekaboo, a different one each click. A click wakes it up too.
 
 The mascot shows in the terminal and in the desktop app; VS Code and mobile don't draw the row above the prompt.

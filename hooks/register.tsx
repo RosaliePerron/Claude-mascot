@@ -1,11 +1,17 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Activity, Blip, CritterProps, Mood, Position } from '../types'
+import type { Activity, Blip, CritterProps, Helper, Mood, Position } from '../types'
 
 const CALM: Mood = { activity: 'working', blip: null, seq: 0, drafting: false }
+const MAIN_WIDTH = 32 // cells the main mascot wanders over
+const HELPER_MIN = 12 // the fewest cells a subagent's mascot gets; past that, more of them go undrawn
+const HELPER_REACTS = 1600 // ms a finished subagent's mascot celebrates (or flinches) before it leaves
+const HELPER_LEAVES = 1000 // ms its exit takes
 
 export const mood = atom({ plugin: 'mascot', key: 'mood' } as const, CALM)
+// One mascot per running subagent, by agent id.
+export const helpers = atom({ plugin: 'mascot', key: 'helpers' } as const, {} as Record<string, Helper>)
 
 // The mood is cosmetic: a failed write must never get in the way of a tool call.
 const setActivity = ($: EngineInterface, activity: Activity) =>
@@ -15,8 +21,40 @@ const setActivity = ($: EngineInterface, activity: Activity) =>
 const react = ($: EngineInterface, blip: Blip) =>
   update($, mood, m => ({ ...m, blip, seq: m.seq + 1 })).catch(() => undefined)
 
+// A subagent's mood; its mascot appears the first time the subagent is seen.
+const setHelper = ($: EngineInterface, id: string, change: (h: Helper) => Helper) =>
+  update($, helpers, all => ({ ...all, [id]: change(all[id] ?? { ...CALM, isDone: false, isLeaving: false }) })).catch(() => undefined)
+
+const dropHelper = ($: EngineInterface, id: string) =>
+  update($, helpers, ({ [id]: _gone, ...rest }) => rest).catch(() => undefined)
+
+// How many subagents' mascots fit beside the main one, and how wide each one's patch is: they share
+// what's left of the row, each up to as much room as the main mascot has.
+export const crewRoom = (columns: number, count: number) => {
+  const free = Math.max(0, columns - MAIN_WIDTH)
+  const shown = Math.min(count, Math.floor(free / HELPER_MIN))
+  return { shown, width: shown ? Math.min(MAIN_WIDTH, Math.floor(free / shown)) : 0 }
+}
+
+type Slot = { kind: 'space' } | { kind: 'main' } | { kind: 'helper'; id: string }
+
+// How the mascots line up across the row: the main one on its side, the subagents' beside it toward the middle.
+export const lineUp = (position: Position, crew: string[]): Slot[] => {
+  const main: Slot = { kind: 'main' }
+  const space: Slot = { kind: 'space' }
+  const others = crew.map((id): Slot => ({ kind: 'helper', id }))
+  if (position === 'left') return [main, ...others, space]
+  if (position === 'center') return [space, main, ...others, space]
+  return [space, ...others, main]
+}
+
 export const register: Register = (on, options) => {
   const position: Position = options.position === 'left' || options.position === 'center' ? options.position : 'right'
+
+  on('session.start', async ($, e, next) => {
+    await update($, helpers, () => ({})).catch(() => undefined)
+    return next(e)
+  })
 
   on('prompt.edit', async ($, e, next) => {
     const box = await next(e)
@@ -35,25 +73,34 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // Deep thinking is the main agent's response streaming thinking; its text and tool calls are work.
+  // Deep thinking is a response streaming thinking; its text and tool calls are work. A subagent's
+  // response moves its own mascot, which shows up with its first one.
   on('turn.step', async function* ($, e, next) {
-    if (e.agentId) {
-      return yield* next(e)
+    const id = e.agentId
+    const set = (activity: Activity) =>
+      id ? setHelper($, id, h => ({ ...h, activity, isDone: false })) : setActivity($, activity)
+    if (id) {
+      await set('working')
     }
     let deep = false
     for await (const chunk of next(e)) {
       const isThinking = chunk.kind === 'thinking'
       if (isThinking !== deep && (isThinking || chunk.kind === 'text' || chunk.kind === 'tool' || chunk.kind === 'input')) {
         deep = isThinking
-        await setActivity($, deep ? 'thinking' : 'working')
+        await set(deep ? 'thinking' : 'working')
       }
       yield chunk
     }
   })
 
   on('tool.call', async ($, e, next) => {
-    if (e.agentId) {
-      return next(e)
+    const id = e.agentId
+    if (id) {
+      const result = await next(e)
+      if (result.isError) {
+        await setHelper($, id, h => ({ ...h, blip: 'oops', seq: h.seq + 1 }))
+      }
+      return result
     }
     await setActivity($, String(e.tool) === 'AskUserQuestion' ? 'waiting' : 'working')
     try {
@@ -77,8 +124,15 @@ export const register: Register = (on, options) => {
   })
 
   on('turn.complete', async ($, e, next) => {
-    if (!e.agentId) {
-      await react($, e.reason === 'answer' ? 'happy' : 'oops')
+    const id = e.agentId
+    const blip: Blip = e.reason === 'answer' ? 'happy' : 'oops'
+    if (id) {
+      // A finished subagent's mascot reacts, makes its exit, then goes.
+      await setHelper($, id, h => ({ ...h, isDone: true, blip, seq: h.seq + 1 }))
+      $.clock.after(HELPER_REACTS, () => void setHelper($, id, h => ({ ...h, isLeaving: true })))
+      $.clock.after(HELPER_REACTS + HELPER_LEAVES, () => void dropHelper($, id))
+    } else {
+      await react($, blip)
     }
     return next(e)
   })
@@ -88,9 +142,30 @@ export const register: Register = (on, options) => {
       return next(e)
     }
 
-    const { Client } = $.ui.resolve(e)
-    const props: CritterProps = { ...(await read($, mood)), isWorking: e.props.isWorking, position }
+    const { Box, Client } = $.ui.resolve(e)
+    const columns = e.props.bodyColumns
+    // The band gets squeezed when the agent list or other panels take the space above the prompt.
+    const rows = Math.max(1, Math.min(4, e.props.maxRows))
+    const mine: CritterProps = { ...(await read($, mood)), isWorking: e.props.isWorking, position, isHelper: false, isLeaving: false }
+    const crew = await read($, helpers)
+    // ponytail: subagents past what the row has room for go undrawn until others finish
+    const room = crewRoom(columns, Object.keys(crew).length)
+    const shown = Object.keys(crew).slice(0, room.shown)
 
-    return <Client key="critter" module="./critter.tsx" props={props} width="100%" height={4} />
+    return (
+      <Box flexDirection="row" width="100%">
+        {lineUp(position, shown).map((slot, i) => {
+          if (slot.kind === 'space') {
+            return <Box key={`space-${i}`} flexGrow={1} />
+          }
+          if (slot.kind === 'main') {
+            return <Client key="critter" module="./critter.tsx" props={mine} width={Math.min(MAIN_WIDTH, columns)} height={rows} />
+          }
+          const helper = crew[slot.id]!
+          const props: CritterProps = { ...helper, isWorking: !helper.isDone, position: 'center', isHelper: true }
+          return <Client key={`helper-${slot.id}`} module="./critter.tsx" props={props} width={room.width} height={rows} />
+        })}
+      </Box>
+    )
   })
 }

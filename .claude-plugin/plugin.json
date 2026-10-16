@@ -1,6 +1,6 @@
 {
   "name": "mascot",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "A little Claude mascot above the prompt that wanders and reacts to the session",
   "author": {
     "name": "Rosalie Perron"

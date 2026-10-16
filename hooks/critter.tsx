@@ -14,10 +14,24 @@ const BLIP_MS = { typing: 1200, happy: 1600, oops: 1000 }
 const BOUNCE_FOR = 3000 // then it stands and watches the prompt until the draft is sent
 const SWITCH_EVERY = 12_000 // a state that lasts this long moves on to another of its animations
 const POKE_MS = 1200 // how long it reacts to a click
+const ENTER_MS = 800 // a subagent's mascot making its entrance
+const LEAVE_MS = 900 // and its exit
 
 type Eyes = 'front' | 'left' | 'right' | 'down' | 'downLeft' | 'downRight' | 'shut'
 type ArmRow = 0 | 1 | 2 | 3 // the body row an arm sticks out of; 2 is where it rests
-export type Mode = 'idle' | 'sleep' | 'typing' | 'watching' | 'happy' | 'oops' | 'thinking' | 'working' | 'waiting' | 'poked'
+export type Mode =
+  | 'idle'
+  | 'sleep'
+  | 'typing'
+  | 'watching'
+  | 'happy'
+  | 'oops'
+  | 'thinking'
+  | 'working'
+  | 'waiting'
+  | 'poked'
+  | 'entering'
+  | 'leaving'
 
 export type Sim = {
   t: number
@@ -30,6 +44,7 @@ export type Sim = {
   blipAt: number
   draftSince: number
   pokeAt: number
+  leftAt: number // when a subagent's mascot was told to leave
   mode: Mode
   variant: number // which of the mode's animations is playing
   variantAt: number
@@ -47,16 +62,21 @@ export const initial = (props: CritterProps): Sim => {
     blipAt: -Infinity,
     draftSince: -Infinity,
     pokeAt: -Infinity,
+    leftAt: -Infinity,
     mode: 'idle',
     variant: 0,
     variantAt: 0,
   }
-  return { ...s, mode: modeOf(s) }
+  const mode = modeOf(s)
+  // A subagent's mascot makes a different entrance each time; everything else starts on its first animation.
+  return { ...s, mode, variant: mode === 'entering' ? pick(ANIMATIONS.entering.length, -1) : 0 }
 }
 
 export const modeOf = (s: Sim): Mode => {
-  const { blip, isWorking, activity, drafting } = s.props
+  const { blip, isWorking, activity, drafting, isHelper, isLeaving } = s.props
+  if (isLeaving) return 'leaving'
   if (s.t - s.pokeAt < POKE_MS) return 'poked'
+  if (isHelper && s.t < ENTER_MS) return 'entering'
   if (blip && s.t - s.blipAt < BLIP_MS[blip] && (blip !== 'typing' || s.t - s.draftSince < BOUNCE_FOR)) return blip
   if (isWorking) return activity
   if (drafting) return 'watching'
@@ -71,6 +91,7 @@ export const receive = (s: Sim, props: CritterProps): Sim => ({
   changedAt: s.t,
   blipAt: props.seq !== s.props.seq ? s.t : s.blipAt,
   draftSince: props.drafting && !s.props.drafting ? s.t : s.draftSince,
+  leftAt: props.isLeaving && !s.props.isLeaving ? s.t : s.leftAt,
 })
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n))
@@ -173,6 +194,8 @@ const BUBBLE: [number, number][][] = [
   ],
 ]
 const JUMP = [0, 1, 2, 2, 1, 0, 0, 0]
+const DROP = [8, 6, 4, 2, 0, 0, 0, 0] // pixels above its spot as it falls in
+const RISE = [6, 5, 4, 3, 2, 1, 0, 0] // and below it as it pops up
 const STARTLE = [1, 2, 2, 2, 1]
 const SPIN: Eyes[] = ['front', 'left', 'shut', 'right', 'front'] // shut, it shows the back of its head
 
@@ -182,7 +205,8 @@ type Pose = {
   eyes: Eyes
   stride: number
   tucked: boolean // legs folded under: lying down asleep, or sitting to think
-  squashed: boolean // breathing out in its sleep: one row flatter
+  squashed: boolean // one row flatter: breathing out in its sleep, or landing
+  hidden: boolean // not drawn: beaming in or out
   arms: { left: ArmRow; right: ArmRow }
   mark: string | null
 }
@@ -193,6 +217,12 @@ type Animation = { travels?: boolean; act: (pose: Pose, beat: number, plot: Plot
 
 const blink = (beat: number) => beat % 40 === 0
 const sincePoke = (s: Sim) => Math.floor((s.t - s.pokeAt) / TICK)
+const sinceLeft = (s: Sim) => Math.floor((s.t - s.leftAt) / TICK)
+const puff = (p: Pose, k: number, plot: Plot) => {
+  // a ring of specks spreading out from where it stood
+  const r = 2 * k
+  for (const [dx, dy] of [[-r, 0], [r, 0], [0, -r], [0, r], [-r, -r], [r, -r], [-r, r], [r, r]] as const) plot(p.x + 7 + dx, p.y + 2 + Math.round(dy / 2))
+}
 const strolling = (p: Pose, s: Sim, beat: number) => (p.x !== s.target ? Math.floor(beat / 4) : 0)
 const bothArms = (row: ArmRow) => ({ left: row, right: row })
 const sparkle = (p: Pose, beat: number, plot: Plot) => {
@@ -359,6 +389,47 @@ export const ANIMATIONS: Record<Mode, Animation[]> = {
       p.mark = '?'
     } },
   ],
+  entering: [
+    // Drops in from above and lands with a squash.
+    { act: (p, beat, _, s) => {
+      const k = Math.floor(s.t / TICK)
+      p.y -= DROP[k] ?? 0
+      p.squashed = k === 4 || k === 5
+    } },
+    // Pops up out of the ground.
+    { act: (p, _, __, s) => {
+      p.y += RISE[Math.floor(s.t / TICK)] ?? 0
+    } },
+    // Beams in, flickering among sparkles.
+    { act: (p, beat, plot, s) => {
+      const k = Math.floor(s.t / TICK)
+      p.hidden = k < 6 && k % 2 === 0
+      if (k < 6) sparkle(p, beat, plot)
+    } },
+  ],
+  leaving: [
+    // Jumps up and out of sight.
+    { act: (p, _, __, s) => {
+      const k = sinceLeft(s)
+      p.y -= k < 2 ? -k : 2 * (k - 1)
+      p.stride = k
+    } },
+    // Sinks into the ground.
+    { act: (p, _, __, s) => {
+      p.y += sinceLeft(s)
+      p.eyes = 'shut'
+    } },
+    // Waves goodbye, then vanishes in a puff.
+    { act: (p, _, plot, s) => {
+      const k = sinceLeft(s)
+      if (k < 5) {
+        p.arms.left = WAVE[k % WAVE.length]!
+      } else {
+        p.hidden = true
+        if (k < 9) puff(p, k - 4, plot)
+      }
+    } },
+  ],
   poked: [
     // Giggles, eyes squeezed shut, hands flapping by its face.
     { act: (p, beat) => {
@@ -421,14 +492,17 @@ export const draw = (s: Sim, columns: number): string[] => {
     stride: 0,
     tucked: false,
     squashed: false,
+    hidden: false,
     arms: { left: 2, right: 2 },
     mark: null,
   }
   animation.act(pose, beat, plot, s)
 
-  sprite(pose).forEach((row, dy) =>
-    [...row].forEach((p, dx) => p === '#' && plot(pose.x + dx, pose.y + dy + (pose.squashed ? 1 : 0))),
-  )
+  if (!pose.hidden) {
+    sprite(pose).forEach((row, dy) =>
+      [...row].forEach((p, dx) => p === '#' && plot(pose.x + dx, pose.y + dy + (pose.squashed ? 1 : 0))),
+    )
+  }
 
   const lines = Array.from({ length: ROWS }, (_, r) => {
     let line = ''
@@ -447,6 +521,12 @@ export const draw = (s: Sim, columns: number): string[] => {
   return lines
 }
 
+// With fewer rows than it draws, it gives up the headroom first, then keeps its head and arms over its legs.
+export const crop = (lines: string[], rows: number) => {
+  const from = rows >= ROWS ? 0 : 1
+  return lines.slice(from, from + Math.max(1, rows))
+}
+
 const Critter: ClientModule<CritterProps, Sim> = (props, surface) => {
   const s = surface.state
   if (s === undefined) {
@@ -461,13 +541,14 @@ const Critter: ClientModule<CritterProps, Sim> = (props, surface) => {
     s.props.isWorking !== props.isWorking ||
     s.props.activity !== props.activity ||
     s.props.drafting !== props.drafting ||
-    s.props.position !== props.position
+    s.props.position !== props.position ||
+    s.props.isLeaving !== props.isLeaving
   ) {
     surface.setState(receive(s, props))
   }
 
   const { Box, Text } = surface.elements
-  const lines = s ? draw(s, surface.columns) : []
+  const lines = s ? crop(draw(s, surface.columns), surface.rows || ROWS) : []
 
   return (
     <Box flexDirection="column">
