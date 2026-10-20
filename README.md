@@ -28,6 +28,10 @@ Click it and it reacts: it giggles, jumps in surprise, spins around, or plays pe
 
 The mascot shows in the terminal and in the desktop app; VS Code and mobile don't draw the row above the prompt.
 
+### /dino
+
+Type `/dino` and the mascot runs the dinosaur game across the whole width of the terminal: press space (or `w`) to jump over the cacti and `s` to duck under the birds; they come faster the further it gets; space again after a crash; `q` to quit. While it runs, what you type goes to the game, not the prompt.
+
 ## Install
 
 In a Claude Code terminal session:

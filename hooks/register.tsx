@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Activity, Blip, CritterProps, Helper, Mood, Position } from '../types'
+import type { Activity, Blip, CritterProps, Dino, Helper, Mood, Position } from '../types'
 
 const CALM: Mood = { activity: 'working', blip: null, seq: 0, drafting: false }
 const MAIN_WIDTH = 32 // cells the main mascot wanders over
@@ -12,6 +12,14 @@ const HELPER_LEAVES = 1000 // ms its exit takes
 export const mood = atom({ plugin: 'mascot', key: 'mood' } as const, CALM)
 // One mascot per running subagent, by agent id.
 export const helpers = atom({ plugin: 'mascot', key: 'helpers' } as const, {} as Record<string, Helper>)
+const OFF: Dino = { isOn: false, presses: 0, ducks: 0 }
+export const game = atom({ plugin: 'mascot', key: 'game' } as const, OFF)
+
+const GAME_ROWS = 8
+// While the run is on, these keys typed in the prompt jump or duck; q quits; anything else is swallowed.
+// The arrows never reach a prompt hook: the prompt keeps them for its history.
+const JUMP_KEYS = new Set([' ', 'space', 'w'])
+const DUCK_KEYS = new Set(['s'])
 
 // The mood is cosmetic: a failed write must never get in the way of a tool call.
 const setActivity = ($: EngineInterface, activity: Activity) =>
@@ -53,10 +61,39 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     await update($, helpers, () => ({})).catch(() => undefined)
+    // A run never outlives a reload: a stuck one would swallow the prompt's keys.
+    await update($, game, () => OFF).catch(() => undefined)
+    // immediate: it starts (or stops) the run at once, even while a turn is still going
+    await $.command.register({
+      name: 'dino',
+      description: 'Run the mascot through the dinosaur game: space to jump, s to duck, q to quit',
+      immediate: true,
+    })
     return next(e)
   })
 
+  on('command.run', { command: 'dino' }, async $ => {
+    const was = await read($, game)
+    await update($, game, (): Dino => ({ isOn: !was.isOn, presses: 0, ducks: 0 }))
+    // typing /dino left a draft behind as far as the mascot knows; the command took it
+    await update($, mood, m => ({ ...m, drafting: false })).catch(() => undefined)
+    return { text: was.isOn ? 'Dino run stopped.' : 'Dino run: space (or w) jumps the cacti, s ducks the birds, q quits.' }
+  })
+
   on('prompt.edit', async ($, e, next) => {
+    const run = await read($, game)
+    if (run.isOn) {
+      const key = e.key?.key ?? e.inputText
+      if (key === 'q') {
+        await update($, game, () => OFF).catch(() => undefined)
+        await update($, mood, m => ({ ...m, drafting: false })).catch(() => undefined)
+      } else if (JUMP_KEYS.has(key)) {
+        await update($, game, (g): Dino => ({ ...g, presses: g.presses + 1 })).catch(() => undefined)
+      } else if (DUCK_KEYS.has(key)) {
+        await update($, game, (g): Dino => ({ ...g, ducks: g.ducks + 1 })).catch(() => undefined)
+      }
+      return { text: e.text, cursor: e.cursor }
+    }
     const box = await next(e)
     const drafting = box.text.trim() !== ''
     await update($, mood, (m): Mood => ({ ...m, blip: 'typing', seq: m.seq + 1, drafting })).catch(() => undefined)
@@ -144,6 +181,10 @@ export const register: Register = (on, options) => {
 
     const { Box, Client } = $.ui.resolve(e)
     const columns = e.props.bodyColumns
+    const run = await read($, game)
+    if (run.isOn) {
+      return <Client key="dino" module="./dino.tsx" props={{ presses: run.presses, ducks: run.ducks }} width="100%" height={Math.max(3, Math.min(GAME_ROWS, e.props.maxRows))} />
+    }
     // The band gets squeezed when the agent list or other panels take the space above the prompt.
     const rows = Math.max(1, Math.min(4, e.props.maxRows))
     const mine: CritterProps = { ...(await read($, mood)), isWorking: e.props.isWorking, position, isHelper: false, isLeaving: false }

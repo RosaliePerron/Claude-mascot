@@ -199,7 +199,7 @@ const RISE = [6, 5, 4, 3, 2, 1, 0, 0] // and below it as it pops up
 const STARTLE = [1, 2, 2, 2, 1]
 const SPIN: Eyes[] = ['front', 'left', 'shut', 'right', 'front'] // shut, it shows the back of its head
 
-type Pose = {
+export type Pose = {
   x: number
   y: number
   eyes: Eyes
@@ -462,7 +462,7 @@ export const ANIMATIONS: Record<Mode, Animation[]> = {
   ],
 }
 
-const sprite = (p: Pose) => {
+export const sprite = (p: Pose) => {
   const rows = [BODY, BODY, BODY, BODY, ...(p.tucked ? [] : [LEGS[p.stride % 2]!])].map(row => [...row])
   const eyeRow = p.eyes.startsWith('down') ? 2 : 1
   for (const col of HOLES[p.eyes]) rows[eyeRow]![col] = '.'
@@ -472,6 +472,17 @@ const sprite = (p: Pose) => {
   }
   return (p.squashed ? rows.slice(1) : rows).map(row => row.join(''))
 }
+
+// A pixel grid, two rows and two columns of pixels to a cell, as lines of block characters.
+export const cells = (px: boolean[][], columns: number) =>
+  Array.from({ length: Math.floor(px.length / 2) }, (_, r) => {
+    let line = ''
+    for (let c = 0; c < columns; c++) {
+      const bit = (dy: number, dx: number) => (px[r * 2 + dy]?.[c * 2 + dx] ? 1 : 0)
+      line += QUADS[bit(0, 0) * 8 + bit(0, 1) * 4 + bit(1, 0) * 2 + bit(1, 1)]
+    }
+    return line
+  })
 
 export const draw = (s: Sim, columns: number): string[] => {
   const width = columns * 2
@@ -504,14 +515,7 @@ export const draw = (s: Sim, columns: number): string[] => {
     )
   }
 
-  const lines = Array.from({ length: ROWS }, (_, r) => {
-    let line = ''
-    for (let c = 0; c < columns; c++) {
-      const bit = (dy: number, dx: number) => (px[r * 2 + dy]![c * 2 + dx] ? 1 : 0)
-      line += QUADS[bit(0, 0) * 8 + bit(0, 1) * 4 + bit(1, 0) * 2 + bit(1, 1)]
-    }
-    return line
-  })
+  const lines = cells(px, columns)
 
   const markAt = Math.floor(pose.x / 2) - 1
   if (pose.mark && markAt >= 0) {
