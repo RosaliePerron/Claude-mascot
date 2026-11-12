@@ -1,4 +1,4 @@
-export type Activity = 'thinking' | 'working' | 'waiting'
+export type Activity = 'thinking' | 'working' | 'waiting' | 'consulting'
 export type Blip = 'typing' | 'happy' | 'oops'
 export type Mood = { activity: Activity; blip: Blip | null; seq: number; drafting: boolean }
 export type Position = 'left' | 'center' | 'right'

@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { Activity, Blip, CritterProps, Dino, Helper, Mood, Position } from '../types'
 
@@ -8,6 +8,10 @@ const MAIN_WIDTH = 32 // cells the main mascot wanders over
 const HELPER_MIN = 12 // the fewest cells a subagent's mascot gets; past that, more of them go undrawn
 const HELPER_REACTS = 1600 // ms a finished subagent's mascot celebrates (or flinches) before it leaves
 const HELPER_LEAVES = 1000 // ms its exit takes
+// The advisor's call streams as a run of engine chunks (6 seen), then the response goes quiet until its
+// answer; a step opens with 2 (message, block start), and the first thinking can come a second or more later.
+const ADVISOR_CALL = 3
+const ADVISOR_QUIET = 1500 // ms; chunks otherwise come a few ms apart
 
 export const mood = atom({ plugin: 'mascot', key: 'mood' } as const, CALM)
 // One mascot per running subagent, by agent id.
@@ -111,7 +115,8 @@ export const register: Register = (on, options) => {
   })
 
   // Deep thinking is a response streaming thinking; its text and tool calls are work. A subagent's
-  // response moves its own mascot, which shows up with its first one.
+  // response moves its own mascot, which shows up with its first one. The advisor runs inside the
+  // response: its call streams as opaque engine chunks, then nothing comes until its answer does.
   on('turn.step', async function* ($, e, next) {
     const id = e.agentId
     const set = (activity: Activity) =>
@@ -120,13 +125,32 @@ export const register: Register = (on, options) => {
       await set('working')
     }
     let deep = false
-    for await (const chunk of next(e)) {
-      const isThinking = chunk.kind === 'thinking'
-      if (isThinking !== deep && (isThinking || chunk.kind === 'text' || chunk.kind === 'tool' || chunk.kind === 'input')) {
-        deep = isThinking
-        await set(deep ? 'thinking' : 'working')
+    let shown: Activity = 'working'
+    let engines = 0 // in a row
+    let quiet: Timer | undefined
+    try {
+      for await (const chunk of next(e)) {
+        quiet?.cancel()
+        engines = chunk.kind === 'engine' ? engines + 1 : 0
+        if (chunk.kind === 'thinking' || chunk.kind === 'text' || chunk.kind === 'tool' || chunk.kind === 'input') {
+          deep = chunk.kind === 'thinking'
+        }
+        const now: Activity = deep ? 'thinking' : 'working'
+        if (now !== shown) {
+          shown = now
+          await set(now)
+        }
+        if (engines >= ADVISOR_CALL) {
+          // ponytail: another server tool or a retry's backoff would read as the advisor too; the API names it only in the step's result, too late to draw
+          quiet = $.clock.after(ADVISOR_QUIET, () => {
+            shown = 'consulting'
+            void set('consulting')
+          })
+        }
+        yield chunk
       }
-      yield chunk
+    } finally {
+      quiet?.cancel()
     }
   })
 

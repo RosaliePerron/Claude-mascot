@@ -119,6 +119,7 @@ const inState = (mode: Mode): Sim => {
     thinking: { isWorking: true, activity: 'thinking' },
     working: { isWorking: true, activity: 'working' },
     waiting: { isWorking: true, activity: 'waiting' },
+    consulting: { isWorking: true, activity: 'consulting' },
     poked: {},
     entering: { isHelper: true, isWorking: true },
     leaving: { isHelper: true, isLeaving: true },
@@ -132,12 +133,12 @@ const inState = (mode: Mode): Sim => {
 const frames = (s: Sim) =>
   Array.from({ length: 9 }, (_, i) => draw({ ...s, t: s.t + i * 100 }, 40).join('\n')).join('\n--\n')
 
-test('every state but waiting has alternate animations, each its own and all drawing the critter', () => {
+test('every state but waiting and consulting has alternate animations, each its own and all drawing the critter', () => {
   for (const mode of Object.keys(ANIMATIONS) as Mode[]) {
     const base = inState(mode)
     expect(modeOf(base)).toBe(mode)
     const looks = ANIMATIONS[mode].map((_, variant) => frames({ ...base, variant }))
-    if (mode !== 'waiting') expect(looks.length).toBeGreaterThan(1)
+    if (mode !== 'waiting' && mode !== 'consulting') expect(looks.length).toBeGreaterThan(1)
     expect(new Set(looks).size).toBe(looks.length)
     for (const look of looks) {
       expect(look).toMatch(/[▐▌█]/)

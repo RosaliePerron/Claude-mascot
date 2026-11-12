@@ -29,6 +29,7 @@ export type Mode =
   | 'thinking'
   | 'working'
   | 'waiting'
+  | 'consulting'
   | 'poked'
   | 'entering'
   | 'leaving'
@@ -387,6 +388,16 @@ export const ANIMATIONS: Record<Mode, Animation[]> = {
     { act: (p, beat) => {
       if (beat % 12 < 2) p.y += 1
       p.mark = '?'
+    } },
+  ],
+  consulting: [
+    // Takes notes, a line growing under its scribbling hand, and looks up now and then to listen.
+    { act: (p, beat, plot) => {
+      const i = beat % 30
+      if (i < 8) return
+      p.eyes = 'down'
+      p.arms.left = beat % 2 ? 3 : 2
+      for (let dx = 0; dx <= Math.min(2, Math.floor((i - 8) / 7)); dx++) plot(p.x + dx, p.y + 4)
     } },
   ],
   entering: [
