@@ -14,6 +14,7 @@ The critter from the Claude Code welcome logo, one cell narrower, sits at the ri
 | ![](docs/typing.gif) | **You start writing**: for the first 3 seconds bounces, tap-dances, or cheers |
 | ![](docs/watching.gif) | **You keep writing**: stands looking down at the prompt, reading along or nodding, until you send or clear it |
 | ![](docs/thinking.gif) | **Claude is deep in thought** (extended thinking): sits down and grows a thought cloud over its head, follows a spark of an idea, or scratches its head |
+| | **Claude is consulting its advisor**: takes notes, looking up now and then to listen |
 | ![](docs/working.gif) | **Claude is working** (writing its reply, calling tools, waiting on them or on subagents): scuttles back and forth, hops along, or hammers away on the spot |
 | ![](docs/done.gif) | **The turn is done**: bounces, throws its arms up, or jumps for joy, with sparkles |
 | ![](docs/asleep.gif) | **Nothing for 2 minutes**: lies down and falls asleep, breathing slowly, or dozes off on its feet |
